@@ -139,7 +139,7 @@ def load_config():
         "AZURE_OPENAI_ENDPOINT": os.environ.get("AZURE_OPENAI_ENDPOINT"),
         "AZURE_OPENAI_API_VERSION": "2024-04-01-preview",
         "OPENAI_MODEL": "gpt-35-turbo-1106",
-        "ATTEMPTS": 100,
+        "ATTEMPTS": 20,
         "MAX_REFERENCE_PROBLEMS": 10,
         "EXAMPLE_PROBLEM_PATH": "data/example_problem.jsonl",
         "OUTPUT_DIR": "data",
