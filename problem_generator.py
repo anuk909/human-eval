@@ -19,6 +19,7 @@ class ProblemGenerator:
         self.output_path = os.path.join(
             self.config["OUTPUT_DIR"], f"new_problems_{int(time.time())}.jsonl"
         )
+        self.dictionary_words = self.load_dictionary()
 
     def setup_openai_client(self):
         try:
@@ -44,7 +45,17 @@ class ProblemGenerator:
     def extact_problem_keys(self):
         return set(json.loads(self.example_problem).keys())
 
-    def generate_problem(self, task_id: str, reference_problems: List[Dict]) -> str:
+    def load_dictionary(self):
+        with open(self.config["DICTIONARY_PATH"], "r") as f:
+            words = f.read().splitlines()
+        return words
+
+    def get_random_word(self):
+        return random.choice(self.dictionary_words)
+
+    def generate_problem(
+        self, task_id: str, random_word: str, reference_problems: List[Dict]
+    ) -> str:
         messages = [
             {
                 "role": "system",
@@ -56,7 +67,8 @@ class ProblemGenerator:
             {
                 "role": "user",
                 "content": f"Generate new and unique problem with task_id {task_id} in HumanEval, it should be different than any problem in the current problems: "
-                + "\n".join(reference_problems),
+                + "\n".join(reference_problems)
+                + f"\nThe problem should involve the word '{random_word}' and have strong semantic connection to it, lexical checks around it are not intresting.",
             },
         ]
 
@@ -72,7 +84,7 @@ class ProblemGenerator:
 
         return completion.choices[0].message.content
 
-    def validate_problem(self, problem: str, task_id: str) -> Dict:
+    def validate_problem(self, problem: str, task_id: str, random_word: str) -> Dict:
         validation_result = {"valid": False, "reason": ""}
 
         # Attempt to load the problem as JSON
@@ -110,6 +122,12 @@ class ProblemGenerator:
             )
             return validation_result
 
+        if random_word not in problem["prompt"]:
+            validation_result["reason"] = (
+                f"The problem prompt does not include the word '{random_word}'."
+            )
+            return validation_result
+
         try:
             correctness_result = check_correctness(
                 problem, problem["canonical_solution"], timeout=10
@@ -139,10 +157,11 @@ def load_config():
         "AZURE_OPENAI_ENDPOINT": os.environ.get("AZURE_OPENAI_ENDPOINT"),
         "AZURE_OPENAI_API_VERSION": "2024-04-01-preview",
         "OPENAI_MODEL": "gpt-35-turbo-1106",
-        "ATTEMPTS": 100,
+        "ATTEMPTS": 20,
         "MAX_REFERENCE_PROBLEMS": 10,
         "EXAMPLE_PROBLEM_PATH": "data/example_problem.jsonl",
         "OUTPUT_DIR": "data",
+        "DICTIONARY_PATH": "data/words.txt",
     }
     return config
 
@@ -160,12 +179,15 @@ def main():
         reference_problems = problems + [problem_generator.example_problem]
         if len(reference_problems) > 10:
             reference_problems = random.sample(reference_problems, 10)
+        random_word = problem_generator.get_random_word()
 
         try:
             new_problem = problem_generator.generate_problem(
-                task_id, reference_problems
+                task_id, random_word, reference_problems
             )
-            validation_result = problem_generator.validate_problem(new_problem, task_id)
+            validation_result = problem_generator.validate_problem(
+                new_problem, task_id, random_word
+            )
             new_problem = json.dumps(json.loads(new_problem))
         except Exception as e:
             logging.error(f"Error generating problem for task_id {task_id}: {e}")
