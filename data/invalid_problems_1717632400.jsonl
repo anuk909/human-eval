@@ -1,1 +1,0 @@
-{"reason": "The problem must have at least 5 different test cases", "problem": "{\"task_id\": \"test/1\", \"prompt\": \"def return_even_index(lst):\\n\", \"canonical_solution\": \"    return [lst[i] for i in range(len(lst)) if i % 2 == 0]\", \"test\": \"def check(candidate):\\n    assert candidate([1, 2, 3, 4, 5]) == [1, 3, 5]\", \"entry_point\": \"return_even_index\"}"}

@@ -133,18 +133,21 @@ class ProblemGenerator:
         try:
             with open(self.new_problems_path, "a") as f:
                 f.write(problem + "\n")
-            logging.info(f"New Problem saved to {self.new_problems_path}")
+            logging.info(f"New problem saved to {self.new_problems_path}")
         except Exception as e:
             logging.error(f"Error saving problem to {self.new_problems_path}: {e}")
 
-    def save_invalid_problems(self, invalid_problems_by_reason: dict):
-        with open(self.invalid_problems_path, "w") as f:
-            for reason, problems in invalid_problems_by_reason.items():
-                for problem in problems:
-                    f.write(json.dumps({"reason": reason, "problem": problem}) + "\n")
-        logging.info(
-            f"Invalid problems saved to {self.invalid_problems_path} by reason"
-        )
+    def save_invalid_problem(self, problem: str, reason: str):
+        try:
+            with open(self.invalid_problems_path, "a") as f:
+                f.write(json.dumps({"reason": reason, "problem": problem}) + "\n")
+            logging.info(
+                f"Invalid problem and reason saved to {self.invalid_problems_path}"
+            )
+        except Exception as e:
+            logging.error(
+                f"Error saving problem and reason to {self.invalid_problems_path}: {e}"
+            )
 
 
 def load_config():
@@ -169,7 +172,7 @@ def main():
     problem_generator = ProblemGenerator(config)
 
     problems = []
-    invalid_problems_by_reason = defaultdict(list)
+    invalid_problems_counter = defaultdict(int)
     for _ in tqdm(range(config["ATTEMPTS"]), desc="generating problems"):
         task_id = f"test/{len(problems) + 1}"
         reference_problems = problems + [problem_generator.example_problem]
@@ -192,18 +195,19 @@ def main():
             problems.append(new_problem)
         else:
             reason = validation_result["reason"]
-            invalid_problems_by_reason[reason].append(new_problem)
             logging.warning(
                 f"Invalid problem for task_id {task_id}: {new_problem}, reason: {reason}"
             )
+            problem_generator.save_invalid_problem(new_problem, reason)
+            invalid_problems_counter[reason] += 1
+
     logging.info(
         f"Problem generation completed. Created {len(problems)} new valid problems out of {config['ATTEMPTS']} attempts"
     )
-    if invalid_problems_by_reason:
+    if invalid_problems_counter:
         logging.info(
-            f"Validation failed reasons: {[(reason, len(problems)) for (reason, problems) in invalid_problems_by_reason.items()]}"
+            f"Validation failed reasons: {list(invalid_problems_counter.items())}"
         )
-        problem_generator.save_invalid_problems(invalid_problems_by_reason)
 
 
 if __name__ == "__main__":
