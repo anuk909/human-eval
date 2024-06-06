@@ -5,6 +5,7 @@ import random
 from typing import List, Dict
 import time
 from tqdm import tqdm
+from collections import defaultdict
 
 import openai
 from human_eval.execution import check_correctness
@@ -16,8 +17,12 @@ class ProblemGenerator:
         self.client = self.setup_openai_client()
         self.example_problem = self.load_example_problem()
         self.problem_keys = self.extact_problem_keys()
-        self.output_path = os.path.join(
-            self.config["OUTPUT_DIR"], f"new_problems_{int(time.time())}.jsonl"
+        timestamp = int(time.time())
+        self.new_problems_path = os.path.join(
+            self.config["OUTPUT_DIR"], f"new_problems_{timestamp}.jsonl"
+        )
+        self.invalid_problems_path = os.path.join(
+            self.config["OUTPUT_DIR"], f"invalid_problems_{timestamp}.jsonl"
         )
 
     def setup_openai_client(self):
@@ -126,11 +131,20 @@ class ProblemGenerator:
 
     def save_problem(self, problem: str):
         try:
-            with open(self.output_path, "a") as f:
+            with open(self.new_problems_path, "a") as f:
                 f.write(problem + "\n")
-            logging.info(f"Problem saved to {self.output_path}")
+            logging.info(f"New Problem saved to {self.new_problems_path}")
         except Exception as e:
-            logging.error(f"Error saving problem to {self.output_path}: {e}")
+            logging.error(f"Error saving problem to {self.new_problems_path}: {e}")
+
+    def save_invalid_problems(self, invalid_problems_by_reason: dict):
+        with open(self.invalid_problems_path, "w") as f:
+            for reason, problems in invalid_problems_by_reason.items():
+                for problem in problems:
+                    f.write(json.dumps({"reason": reason, "problem": problem}) + "\n")
+        logging.info(
+            f"Invalid problems saved to {self.invalid_problems_path} by reason"
+        )
 
 
 def load_config():
@@ -139,7 +153,7 @@ def load_config():
         "AZURE_OPENAI_ENDPOINT": os.environ.get("AZURE_OPENAI_ENDPOINT"),
         "AZURE_OPENAI_API_VERSION": "2024-04-01-preview",
         "OPENAI_MODEL": "gpt-35-turbo-1106",
-        "ATTEMPTS": 20,
+        "ATTEMPTS": 5,
         "MAX_REFERENCE_PROBLEMS": 10,
         "EXAMPLE_PROBLEM_PATH": "data/example_problem.jsonl",
         "OUTPUT_DIR": "data",
@@ -155,6 +169,7 @@ def main():
     problem_generator = ProblemGenerator(config)
 
     problems = []
+    invalid_problems_by_reason = defaultdict(list)
     for _ in tqdm(range(config["ATTEMPTS"]), desc="generating problems"):
         task_id = f"test/{len(problems) + 1}"
         reference_problems = problems + [problem_generator.example_problem]
@@ -176,12 +191,19 @@ def main():
             problem_generator.save_problem(new_problem)
             problems.append(new_problem)
         else:
+            reason = validation_result["reason"]
+            invalid_problems_by_reason[reason].append(new_problem)
             logging.warning(
-                f"Invalid problem for task_id {task_id}: {new_problem}, reason: {validation_result['reason']}"
+                f"Invalid problem for task_id {task_id}: {new_problem}, reason: {reason}"
             )
     logging.info(
         f"Problem generation completed. Created {len(problems)} new valid problems out of {config['ATTEMPTS']} attempts"
     )
+    if invalid_problems_by_reason:
+        logging.info(
+            f"Validation failed reasons: {[(reason, len(problems)) for (reason, problems) in invalid_problems_by_reason.items()]}"
+        )
+        problem_generator.save_invalid_problems(invalid_problems_by_reason)
 
 
 if __name__ == "__main__":
