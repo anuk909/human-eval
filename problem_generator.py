@@ -17,6 +17,13 @@ class ProblemGenerator:
         self.client = self.setup_openai_client()
         self.example_problem = self.load_example_problem()
         self.problem_keys = self.extact_problem_keys()
+        example_validation = self.validate_problem(self.example_problem)
+        if not example_validation["valid"]:
+            logging.error(
+                f"Example problem is invalid, reason - {example_validation['reason']}"
+            )
+            raise ValueError("Example problem is invalid")
+
         timestamp = int(time.time())
         self.new_problems_path = os.path.join(
             self.config["OUTPUT_DIR"], f"new_problems_{timestamp}.jsonl"
@@ -77,7 +84,7 @@ class ProblemGenerator:
 
         return completion.choices[0].message.content
 
-    def validate_problem(self, problem: str, task_id: str) -> Dict:
+    def validate_problem(self, problem: str, task_id: str = None) -> Dict:
         validation_result = {"valid": False, "reason": ""}
 
         # Attempt to load the problem as JSON
@@ -93,7 +100,7 @@ class ProblemGenerator:
             )
             return validation_result
 
-        if problem["task_id"] != task_id:
+        if task_id and problem["task_id"] != task_id:
             validation_result["reason"] = "Task ID mismatch."
             return validation_result
 
@@ -120,7 +127,9 @@ class ProblemGenerator:
                 problem, problem["canonical_solution"], timeout=10
             )
             if not correctness_result["passed"]:
-                validation_result["reason"] = "Solution failed correctness check."
+                validation_result["reason"] = (
+                    f"Solution failed correctness check. correctness_check_result: {correctness_result['result']}"
+                )
                 return validation_result
         except Exception as e:
             validation_result["reason"] = f"Error during correctness check: {e}"
@@ -155,10 +164,10 @@ def load_config():
         "AZURE_OPENAI_API_KEY": os.environ.get("AZURE_OPENAI_API_KEY"),
         "AZURE_OPENAI_ENDPOINT": os.environ.get("AZURE_OPENAI_ENDPOINT"),
         "AZURE_OPENAI_API_VERSION": "2024-04-01-preview",
-        "OPENAI_MODEL": "gpt-35-turbo-1106",
+        "OPENAI_MODEL": "gpt-4-turbo-2024-04-09",
         "ATTEMPTS": 5,
         "MAX_REFERENCE_PROBLEMS": 10,
-        "EXAMPLE_PROBLEM_PATH": "data/example_problem.jsonl",
+        "EXAMPLE_PROBLEM_PATH": "data/example_hard_problem.jsonl",
         "OUTPUT_DIR": "data",
     }
     return config
@@ -174,7 +183,7 @@ def main():
     problems = []
     invalid_problems_counter = defaultdict(int)
     for _ in tqdm(range(config["ATTEMPTS"]), desc="generating problems"):
-        task_id = f"test/{len(problems) + 1}"
+        task_id = f"hard/{len(problems) + 1}"
         reference_problems = problems + [problem_generator.example_problem]
         if len(reference_problems) > 10:
             reference_problems = random.sample(reference_problems, 10)
