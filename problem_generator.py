@@ -20,8 +20,7 @@ class ProblemGenerator:
         self.config = config
         self.client = self.setup_openai_client()
         self.example_problem = self.load_example_problem()
-        self.problem_keys = self.extract_problem_keys()
-        # self.validate_example_problem()
+        self.validate_example_problem()
 
         timestamp = int(time.time())
         self.new_problems_path = os.path.join(
@@ -42,6 +41,10 @@ class ProblemGenerator:
             logging.error(f"Authentication error: {e}")
             raise
 
+    @property
+    def example_problem_dict(self) -> Dict[str, str]:
+        return json.loads(self.example_problem)
+
     def load_example_problem(self) -> str:
         try:
             with open(self.config["EXAMPLE_PROBLEM_PATH"], "r") as f:
@@ -52,11 +55,19 @@ class ProblemGenerator:
             )
             raise
 
-    def extract_problem_keys(self) -> set:
-        return set(json.loads(self.example_problem).keys())
+    @property
+    def problem_keys(self) -> set:
+        return set(self.example_problem_dict.keys())
+
+    @property
+    def task_id_class(self) -> str:
+        task_id = self.example_problem_dict.get("task_id")
+        return task_id.split("/")[0] if task_id else ""
 
     def validate_example_problem(self) -> None:
-        example_validation = self.validate_problem(self.example_problem)
+        example_validation = self.validate_problem(
+            self.example_problem, self.task_id_class + "/0"
+        )
         if not example_validation["valid"]:
             logging.error(
                 f"Example problem is invalid, reason - {example_validation['reason']}"
@@ -102,9 +113,7 @@ class ProblemGenerator:
             + "\n".join(reference_problems),
         }
 
-    def validate_problem(
-        self, problem: str, task_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def validate_problem(self, problem: str, task_id: str) -> Dict[str, Any]:
         validation_result = {"valid": False, "reason": ""}
 
         try:
@@ -116,7 +125,7 @@ class ProblemGenerator:
         if self.problem_keys != set(problem_dict):
             return validation_result
 
-        if task_id and problem_dict["task_id"] != task_id:
+        if problem_dict["task_id"] != task_id:
             validation_result["reason"] = "Task ID mismatch."
             return validation_result
 
@@ -201,7 +210,7 @@ def main() -> None:
     problems: List[str] = []
     invalid_problems_counter: Dict[str, int] = defaultdict(int)
     for _ in tqdm(range(config["ATTEMPTS"]), desc="generating problems"):
-        task_id = f"hard/{len(problems) + 1}"
+        task_id = f"{problem_generator.task_id_class}/{len(problems) + 1}"
         reference_problems = problems + [problem_generator.example_problem]
         if len(reference_problems) > 10:
             reference_problems = random.sample(reference_problems, 10)
