@@ -2,9 +2,10 @@ import json
 import os
 import argparse
 import textwrap
+from typing import Dict
 
 
-def json_to_markdown(json_data):
+def json_to_markdown(json_data: Dict[str, str]) -> str:
     task_id = json_data["task_id"]
     prompt = json_data["prompt"]
     canonical_solution = json_data["canonical_solution"]
@@ -23,14 +24,14 @@ def json_to_markdown(json_data):
     return markdown
 
 
-def convert_jsonl_to_markdown(input_file, output_dir, include_invalid=False):
+def convert_jsonl_to_markdown(
+    input_file: str, output_dir: str, include_invalid: bool = False
+) -> None:
     output_dir = os.path.join(output_dir, os.path.basename(input_file).split(".")[0])
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     with open(input_file, "r") as f:
-        line_counter = 0
-        for line in f:
+        for line_counter, line in enumerate(f, start=1):
             json_data = json.loads(line)
             is_invalid = "problem" in json_data and "reason" in json_data
 
@@ -47,7 +48,7 @@ def convert_jsonl_to_markdown(input_file, output_dir, include_invalid=False):
                 reason_md = (
                     f"## Reason\n\n```\n{textwrap.dedent(reason).strip()}\n```\n\n"
                 )
-                invalid_md = reason_md + markdown_content
+                markdown_content += reason_md
 
                 output_file = os.path.join(
                     output_dir, f"line_{line_counter}_invalid.md"
@@ -56,9 +57,8 @@ def convert_jsonl_to_markdown(input_file, output_dir, include_invalid=False):
                 output_file = os.path.join(output_dir, f"line_{line_counter}.md")
 
             with open(output_file, "w") as out_f:
-                out_f.write(invalid_md if is_invalid else markdown_content)
+                out_f.write(markdown_content)
 
-            line_counter += 1
             print(f"Markdown file '{output_file}' created successfully.")
 
 
