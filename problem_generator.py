@@ -5,7 +5,7 @@ import random
 import time
 from tqdm import tqdm
 from collections import defaultdict
-from typing import List, Dict, Union, Optional, Any
+from typing import List, Dict, Any
 
 import openai
 from openai.types.chat import (
