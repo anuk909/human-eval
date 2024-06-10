@@ -97,12 +97,17 @@ class ProblemGenerator:
         return {
             "role": "system",
             "content": (
-                f"You are a Writer of new problems for the HumanEval Dataset. "
-                f"Your response should be in JSON format in the same format as HumanEval (the keys are - {str(self.problem_keys)}), "
-                f"for example, here is one problem: {self.example_problem}"
-                "The prompt must start with def, the test must start with def, canonical_solution must solve the test, there should be at least least 5 different test cases"
-            ),
+                "You are a writer of new problems for the HumanEval Dataset. Your task is to create a high-quality problem that meets the following requirements:\n\n"
+                f"1. The response should be in JSON format, following the same structure as the existing HumanEval problems (the keys are: {str(self.problem_keys)}).\n"
+                f"2. Provide an example problem in the same format as the one given: {self.example_problem}\n\n"
+                "3. The problem prompt must start with 'def'.\n"
+                "4. The test cases must also start with 'def'.\n" 
+                "5. The canonical solution must pass all the test cases.\n"
+                "6. Include at least 5 different test cases.\n"
+                "7. Avoid mathematical problems."
+            )
         }
+
 
     def get_user_message(
         self, task_id: str, reference_problems: List[str]
