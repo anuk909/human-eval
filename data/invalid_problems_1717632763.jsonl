@@ -1,0 +1,1 @@
+{"reason": "The problem must have at least 5 different test cases", "problem": "{\"task_id\": \"test/1\", \"prompt\": \"def return2():\\n\", \"canonical_solution\": \"    return 2\", \"test\": \"def check(candidate):\\n    assert candidate() == 2\", \"entry_point\": \"return2\"}"}
