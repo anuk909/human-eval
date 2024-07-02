@@ -2,7 +2,7 @@
 
 ## Topics
 
-Rope Data Structure, Boruvka's Algorithm
+['Rope Data Structure', "Boruvka's Algorithm"]
 
 ## Cover Story
 

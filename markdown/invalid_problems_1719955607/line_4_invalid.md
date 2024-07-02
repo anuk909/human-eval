@@ -2,7 +2,7 @@
 
 ## Topics
 
-Shell, Z-Algorithm
+['Shell', 'Z-Algorithm']
 
 ## Cover Story
 

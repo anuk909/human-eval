@@ -2,7 +2,7 @@
 
 ## Topics
 
-Enumeration, Sprague-Grundy Theorem
+['Enumeration', 'Sprague-Grundy Theorem']
 
 ## Cover Story
 

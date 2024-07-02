@@ -2,7 +2,7 @@
 
 ## Topics
 
-Rejection Sampling, Heavy-Light Decomposition
+['Rejection Sampling', 'Heavy-Light Decomposition']
 
 ## Cover Story
 

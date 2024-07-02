@@ -2,7 +2,7 @@
 
 ## Topics
 
-Stable Marriage Problem, Edmonds-Karp Algorithm
+['Stable Marriage Problem', 'Edmonds-Karp Algorithm']
 
 ## Cover Story
 
