@@ -17,7 +17,7 @@ def json_to_markdown(json_data: Dict[str, Any]) -> str:
 
     if "topics" in extra_info:
         markdown += "## Topics\n\n"
-        markdown += ", ".join(extra_info["topics"]) + "\n\n"
+        markdown += f"{extra_info['topics']}\n\n"
 
     if "cover_story_words" in extra_info:
         markdown += "## Cover Story\n\n"
