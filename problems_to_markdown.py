@@ -2,19 +2,34 @@ import json
 import os
 import argparse
 import textwrap
-from typing import Dict
+from typing import Dict, Any
 
 
-def json_to_markdown(json_data: Dict[str, str]) -> str:
+def json_to_markdown(json_data: Dict[str, Any]) -> str:
     task_id = json_data["task_id"]
     prompt = json_data["prompt"]
     canonical_solution = json_data["canonical_solution"]
     test_cases = json_data["test"]
     entry_point = json_data["entry_point"]
+    extra_info = json_data.get("extra_info", {})
 
     markdown = f"# Task ID: {task_id}\n\n"
+
+    if "topics" in extra_info:
+        markdown += "## Topics\n\n"
+        markdown += ", ".join(extra_info["topics"]) + "\n\n"
+
+    if "cover_story_words" in extra_info:
+        markdown += "## Cover Story\n\n"
+        markdown += f"{extra_info['cover_story_words']}\n\n"
+
     markdown += "## Prompt\n\n"
     markdown += f"```python\n{prompt}\n```\n\n"
+
+    if "cleaned_prompt" in extra_info:
+        markdown += "## Cleaned Prompt\n\n"
+        markdown += f"```python\n{extra_info['cleaned_prompt']}\n```\n\n"
+
     markdown += "## Canonical Solution\n\n"
     markdown += f"```python\n{canonical_solution}\n```\n\n"
     markdown += "## Test Cases\n\n"
@@ -38,9 +53,7 @@ def convert_jsonl_to_markdown(
             if is_invalid and not include_invalid:
                 continue  # Skip invalid problems if not included
 
-            problem_json = (
-                json_data if not is_invalid else json.loads(json_data["problem"])
-            )
+            problem_json = json_data if not is_invalid else json_data["problem"]
             markdown_content = json_to_markdown(problem_json)
 
             if is_invalid:
