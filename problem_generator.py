@@ -337,6 +337,7 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int) -> Any:
         return None, None
 
     validation_result = problem_generator.validator.validate_problem(new_problem)
+
     if validation_result["valid"]:
         warnings = validation_result.get("warnings", [])
         if warnings:
@@ -344,9 +345,40 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int) -> Any:
                 f"Problem generated for task_id {task_id} with warnings: {warnings}"
             )
             new_problem["extra_info"]["warnings"] = warnings
+
+            # Attempt to improve the problem due to warnings
+            followup_reason = "Problem is valid but has the following warnings."
+            gpt_feedback = problem_generator.validator._check_gpt_feedback(new_problem)
+            try:
+                improved_problem = problem_generator.validator.follow_up_prompt(
+                    new_problem, followup_reason, warnings, gpt_feedback
+                )
+                improved_validation_result = (
+                    problem_generator.validator.validate_problem(improved_problem)
+                )
+                if improved_validation_result["valid"]:
+                    improved_warnings = improved_validation_result.get("warnings", [])
+                    if improved_warnings:
+                        logging.info(
+                            f"Improved problem generated for task_id {task_id} with warnings: {improved_warnings}"
+                        )
+                    return improved_problem, None
+                else:
+                    improved_reason = improved_validation_result["reason"]
+                    logging.warning(
+                        f"Improved problem invalid for task_id {task_id}, reason: {improved_reason}"
+                    )
+                    improved_problem["invalid_reason"] = improved_reason
+                    return None, improved_problem
+            except Exception as error:
+                logging.error(
+                    f"Error during follow-up prompt for task_id {task_id}: {error}"
+                )
+                new_problem["invalid_reason"] = f"Valid with warnings: {warnings}"
+                return new_problem, None
         else:
             logging.info(f"Problem generated for task_id {task_id}")
-        return new_problem, None
+            return new_problem, None
     else:
         reason = validation_result["reason"]
         warnings = validation_result.get("warnings", [])
@@ -370,6 +402,7 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int) -> Any:
                     logging.info(
                         f"Improved problem generated for task_id {task_id} with warnings: {warnings}"
                     )
+                    improved_problem["extra_info"]["warnings"] = warnings
                 return improved_problem, None
             else:
                 improved_reason = improved_validation_result["reason"]
