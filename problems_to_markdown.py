@@ -12,7 +12,7 @@ def setup_logging():
     )
 
 
-def json_to_markdown(json_data: Dict[str, Any], warnings: list = None) -> str:
+def json_to_markdown(json_data: Dict[str, Any]) -> str:
     task_id = json_data["task_id"]
     prompt = json_data["prompt"]
     canonical_solution = json_data["canonical_solution"]
@@ -47,9 +47,9 @@ def json_to_markdown(json_data: Dict[str, Any], warnings: list = None) -> str:
         f"`{entry_point}`\n\n"
     )
 
-    if warnings:
+    if "warnings" in extra_info:
         markdown += "## Warnings\n\n"
-        for warning in warnings:
+        for warning in extra_info["warnings"]:
             markdown += f"- {warning}\n"
         markdown += "\n"
 
@@ -76,14 +76,9 @@ def convert_jsonl_to_markdown(
                 continue  # Skip invalid problems if not included
 
             problem_json = json_data if not is_invalid else json_data["problem"]
-            warnings = (
-                json_data.get("extra_info", {}).get("warnings", None)
-                if not is_invalid
-                else json_data.get("warnings", [])
-            )
             reason = json_data["reason"] if is_invalid else ""
 
-            markdown_content = json_to_markdown(problem_json, warnings)
+            markdown_content = json_to_markdown(problem_json)
 
             if is_invalid:
                 reason_md = (

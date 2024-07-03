@@ -102,7 +102,7 @@ class ProblemValidator:
     ) -> None:
         try:
             correctness_result = check_correctness(
-                problem, problem["canonical_solution"], timeout=10
+                problem, problem["canonical_solution"], timeout=15
             )
             if not correctness_result["passed"]:
                 validation_result["warnings"].append(
@@ -119,7 +119,8 @@ class ProblemValidator:
             "content": (
                 "You are an expert in analyzing and critiquing problem statements, especially for coding competitions."
                 " Please find and report any potential flaws in this problem. Focus on significant issues that make the problem"
-                " unusable. The output format should be 'severity(1-5), flaw_name: description' with each flaw on a new line."
+                " unusable. The output format should be 'severity, flaw_name: description' with each flaw on a new line, severity "
+                "is between 1 to 5 with 5 being the highest severity."
             ),
         }
         user_message = {"role": "user", "content": json.dumps(problem, indent=2)}
@@ -312,9 +313,6 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int):
         return new_problem, None
     else:
         reason = validation_result["reason"]
-        warnings = validation_result.get("warnings", [])
-        if warnings:
-            reason += f" Warnings: {warnings}"
         logging.warning(f"Invalid problem generated, reason: {reason}")
         new_problem["invalid_reason"] = reason
         return None, new_problem
