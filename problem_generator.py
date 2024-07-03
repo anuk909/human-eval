@@ -253,7 +253,8 @@ class ProblemGenerator:
                 "5. Solution must pass test cases.\n"
                 "6. Combine multiple concepts uniquely and efficiently.\n"
                 "7. Include constraints or twists, and consider time/space complexity requirements.\n"
-                "8. Include a 'cleaned_prompt' field that matches the problem prompt but without all the cover story around it, "
+                "8. The problem should require at least 30 lines to solve.\n"
+                "9. Include a 'cleaned_prompt' field that matches the problem prompt but without all the cover story around it, "
                 "make sure that the core concept of the questions stays the same."
             ),
         }
