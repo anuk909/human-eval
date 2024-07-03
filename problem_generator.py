@@ -209,7 +209,7 @@ class ProblemGenerator:
     def generate_problem(self, task_id: str) -> Dict[str, Any]:
         cover_story_words, topics = random.sample(
             self.cover_story_words, 2
-        ), random.sample(self.topics, 2)
+        ), random.sample(self.topics, 3)
         messages = (
             self._get_system_message(),
             self._get_user_message(cover_story_words, topics),
@@ -261,9 +261,11 @@ class ProblemGenerator:
     def _get_user_message(
         self, cover_story_words: List[str], topics: List[str]
     ) -> ChatCompletionUserMessageParam:
+        cover_story_str = " and ".join(cover_story_words)
+        topics_str = " and ".join(topics)
         return {
             "role": "user",
-            "content": f"Create a problem with a cover story about {' and '.join(cover_story_words)} and involving the topics: {', '.join(topics)}. Ensure complexity and novelty.",
+            "content": f"Create a problem with a cover story about {cover_story_str} and involving the topics: {topics_str}. Ensure complexity and novelty.",
         }
 
     def save_problem(
