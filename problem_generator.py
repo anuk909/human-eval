@@ -249,7 +249,7 @@ class ProblemGenerator:
                 f"2. Example: {self.example_problem}\n"
                 "3. Prompt must start with 'def' and include examples that will help understanding the problem.\n"
                 "4. Test cases must start with 'def' and include at least five complex cases.\n"
-                "5. Solution must pass test cases and complete the prompt code without redining the entry_point function.\n"
+                "5. Solution must pass test cases and complete the prompt code without redefining the entry_point function from the prompt.\n"
                 "6. Combine multiple concepts uniquely and efficiently.\n"
                 "7. Include constraints or twists, and consider time/space complexity requirements.\n"
                 "8. The problem should require at least 30 lines to solve.\n"
@@ -266,8 +266,8 @@ class ProblemGenerator:
         topics_str = " and ".join(topics)
         return {
             "role": "user",
-            "content": f"Create a problem with a cover story about {cover_story_str} and involving some of the topics from: {topics_str} "
-            "(you can choose subset of the topics that makes sense together). Ensure complexity and novelty.",
+            "content": f"Create a problem with a cover story about {cover_story_str} and involving the topics: {topics_str}. "
+            "Use concepts from computer vision and Ensure complexity and novelty.",
         }
 
     def save_problem(
