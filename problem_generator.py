@@ -136,7 +136,6 @@ class ProblemValidator:
                 line = line.strip()
                 if line:
                     try:
-                        # Parse the severity and check if it meets the threshold
                         severity = int(line[: line.find(",")])
                         if severity >= 4:
                             feedbacks.append(line)
@@ -148,6 +147,38 @@ class ProblemValidator:
             return feedbacks
         except openai.OpenAIError as error:
             return [f"Error getting GPT feedback: {error}"]
+
+    def follow_up_prompt(
+        self,
+        problem: Dict[str, Any],
+        followup_reason: str,
+        warnings: List[str],
+        gpt_feedback: List[str],
+    ) -> Dict[str, Any]:
+        system_message = {
+            "role": "system",
+            "content": (
+                "You are an expert problem setter for advanced coding competitions. You previously created a problem that had the following issues: "
+                f"{followup_reason}. Here are some additional issues identified:\n"
+                f"1. Warnings: {warnings}\n"
+                f"2. GPT Feedback: {gpt_feedback}\n"
+                "Please revise and improve the problem statement to fix these issues and return JSON with same keys as the original problem."
+            ),
+        }
+        user_message = {"role": "user", "content": json.dumps(problem, indent=2)}
+
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.config["OPENAI_MODEL"],
+                messages=[system_message, user_message],
+                response_format={"type": "json_object"},
+            )
+            content = completion.choices[0].message.content
+            revised_problem = json.loads(content)
+            return revised_problem
+        except openai.OpenAIError as error:
+            logging.error(f"OpenAI error during follow-up: {error}")
+            raise
 
 
 class ProblemGenerator:
@@ -307,7 +338,8 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int):
 
     validation_result = problem_generator.validator.validate_problem(new_problem)
     if validation_result["valid"]:
-        if warnings := validation_result.get("warnings"):
+        warnings = validation_result.get("warnings", [])
+        if warnings:
             logging.info(
                 f"Problem generated for task_id {task_id} with warnings: {warnings}"
             )
@@ -317,9 +349,46 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int):
         return new_problem, None
     else:
         reason = validation_result["reason"]
-        logging.warning(f"Invalid problem generated, reason: {reason}")
-        new_problem["invalid_reason"] = reason
-        return None, new_problem
+        warnings = validation_result.get("warnings", [])
+        gpt_feedback = problem_generator.validator._check_gpt_feedback(new_problem)
+        logging.warning(
+            f"Problem invalid for task_id {task_id}, reason: {reason}, warnings: {warnings}, GPT feedback: {gpt_feedback}"
+        )
+
+        # Apply follow-up for fixable issues
+        followup_reason = f"{reason}; Ensure all given topics are used and the problem statement is understandable."
+
+        try:
+            improved_problem = problem_generator.validator.follow_up_prompt(
+                new_problem, followup_reason, warnings, gpt_feedback
+            )
+            # Re-validate the improved problem
+            improved_validation_result = problem_generator.validator.validate_problem(
+                improved_problem
+            )
+            if improved_validation_result["valid"]:
+                warnings = improved_validation_result.get("warnings", [])
+                if warnings:
+                    logging.info(
+                        f"Improved problem generated for task_id {task_id} with warnings: {warnings}"
+                    )
+                    improved_problem["extra_info"]["warnings"] = warnings
+                else:
+                    logging.info(f"Improved problem generated for task_id {task_id}")
+                return improved_problem, None
+            else:
+                improved_reason = improved_validation_result["reason"]
+                logging.warning(
+                    f"Improved problem invalid for task_id {task_id}, reason: {improved_reason}"
+                )
+                improved_problem["invalid_reason"] = improved_reason
+                return None, improved_problem
+        except Exception as error:
+            logging.error(
+                f"Error during follow-up prompt for task_id {task_id}: {error}"
+            )
+            new_problem["invalid_reason"] = reason
+            return None, new_problem
 
 
 def main() -> None:
