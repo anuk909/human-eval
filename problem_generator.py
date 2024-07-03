@@ -237,7 +237,7 @@ class ProblemGenerator:
     def generate_problem(self, task_id: str) -> Dict[str, Any]:
         cover_story_words, topics = random.sample(
             self.cover_story_words, 2
-        ), random.sample(self.topics, 3)
+        ), random.sample(self.topics, 2)
         messages = (
             self._get_system_message(),
             self._get_user_message(cover_story_words, topics),
