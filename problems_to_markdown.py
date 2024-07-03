@@ -38,6 +38,12 @@ def json_to_markdown(json_data: Dict[str, Any]) -> str:
             f"```python\n{extra_info['cleaned_prompt']}\n```\n\n"
         )
 
+    if "warnings" in extra_info:
+        markdown += "## Warnings\n\n"
+        for warning in extra_info["warnings"]:
+            markdown += f"- {warning}\n"
+        markdown += "\n"
+
     markdown += (
         "## Canonical Solution\n\n"
         f"```python\n{canonical_solution}\n```\n\n"
@@ -46,12 +52,6 @@ def json_to_markdown(json_data: Dict[str, Any]) -> str:
         "## Entry Point\n\n"
         f"`{entry_point}`\n\n"
     )
-
-    if "warnings" in extra_info:
-        markdown += "## Warnings\n\n"
-        for warning in extra_info["warnings"]:
-            markdown += f"- {warning}\n"
-        markdown += "\n"
 
     return markdown
 

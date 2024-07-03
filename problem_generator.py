@@ -5,7 +5,7 @@ import random
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Any, Union
+from typing import Dict, Any, List, Tuple
 
 import openai
 from openai.types.chat import (
@@ -19,16 +19,18 @@ from human_eval.execution import check_correctness
 class FileHandler:
     @staticmethod
     def load_file(path: str) -> str:
-        return FileHandler._read_file(path)
+        try:
+            with open(path, "r") as file:
+                return file.read()
+        except FileNotFoundError:
+            raise ValueError(f"File not found: {path}")
 
     @staticmethod
     def load_json_file(path: str) -> Any:
         try:
-            return json.loads(FileHandler._read_file(path))
+            return json.loads(FileHandler.load_file(path))
         except json.JSONDecodeError as error:
-            error_message = f"Error loading JSON file: {path}. JSONDecodeError: {error}"
-            logging.error(error_message)
-            raise ValueError(error_message)
+            raise ValueError(f"Error loading JSON file: {path}. Error: {error}")
 
     @staticmethod
     def save_jsonl(path: str, data: Dict[str, Any]) -> None:
@@ -39,16 +41,6 @@ class FileHandler:
             logging.info(f"Data saved to {path}")
         except Exception as e:
             logging.error(f"Error saving data to {path}: {e}")
-
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r") as file:
-                return file.read()
-        except FileNotFoundError:
-            error_message = f"File not found: {path}"
-            logging.error(error_message)
-            raise ValueError(error_message)
 
 
 class ProblemValidator:
@@ -63,9 +55,7 @@ class ProblemValidator:
     def problem_keys(self) -> set:
         return set(self.example_problem_dict.keys())
 
-    def validate_problem(
-        self, problem: Dict[str, Any]
-    ) -> Dict[str, Union[bool, str, List[str]]]:
+    def validate_problem(self, problem: Dict[str, Any]) -> Dict[str, Any]:
         validation_result = {"valid": True, "reason": "", "warnings": []}
 
         if not self.problem_keys.issubset(problem.keys()):
@@ -80,18 +70,16 @@ class ProblemValidator:
     def _check_problem_structure(
         self, problem: Dict[str, Any], validation_result: Dict[str, Any]
     ) -> None:
-        prompt = problem["prompt"].strip()
-        test = problem["test"].strip()
+        prompt, test = problem["prompt"].strip(), problem["test"].strip()
 
         if not prompt.startswith("def "):
             validation_result["warnings"].append("Prompt does not start with 'def '.")
         if not test.startswith("def "):
             validation_result["warnings"].append("Test does not start with 'def '.")
-        if (test_case_count := problem["test"].count("assert")) < 5:
+        if (test_case_count := test.count("assert")) < 5:
             validation_result["warnings"].append(
                 f"Only {test_case_count} test cases found. Minimum recommended is 5."
             )
-
         if len(prompt) < 50:
             validation_result["warnings"].append("Prompt seems too short.")
         if len(problem["canonical_solution"]) < 10:
@@ -117,10 +105,9 @@ class ProblemValidator:
         system_message = {
             "role": "system",
             "content": (
-                "You are an expert in analyzing and critiquing problem statements, especially for coding competitions."
-                " Please find and report any potential flaws in this problem. Focus on significant issues that make the problem"
-                " unusable. The output format should be 'severity, flaw_name: description' with each flaw on a new line, severity "
-                "is between 1 to 5 with 5 being the highest severity."
+                "You are an expert in analyzing and critiquing problem statements, especially for coding competitions. "
+                "Please find and report any potential flaws in this problem. Focus on significant issues that make the problem unusable. "
+                "The output format should be 'severity, flaw_name: description' with each flaw on a new line, severity is between 1 to 5 with 5 being the highest severity."
             ),
         }
         user_message = {"role": "user", "content": json.dumps(problem, indent=2)}
@@ -137,7 +124,6 @@ class ProblemValidator:
                 line = line.strip()
                 if line:
                     try:
-                        # Parse the severity and check if it meets the threshold
                         severity = int(line[: line.find(",")])
                         if severity >= 4:
                             feedbacks.append(line)
@@ -145,10 +131,33 @@ class ProblemValidator:
                         logging.warning(
                             f"Unable to parse feedback line: '{line}', Error: {parse_error}"
                         )
-
             return feedbacks
         except openai.OpenAIError as error:
             return [f"Error getting GPT feedback: {error}"]
+
+    def follow_up_prompt(
+        self, problem: Dict[str, Any], followup_reason: str, warnings: List[str]
+    ) -> Dict[str, Any]:
+        system_message = {
+            "role": "system",
+            "content": (
+                f"You are an expert problem setter for advanced coding competitions. You previously created a problem that had the following issues: "
+                f"{followup_reason}. Here are some additional issues identified: {warnings}.\n"
+                "Please revise and improve the problem statement to fix these issues and return JSON with same keys as the original problem."
+            ),
+        }
+        user_message = {"role": "user", "content": json.dumps(problem, indent=2)}
+
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.config["OPENAI_MODEL"],
+                messages=[system_message, user_message],
+                response_format={"type": "json_object"},
+            )
+            return json.loads(completion.choices[0].message.content)
+        except (json.JSONDecodeError, openai.OpenAIError) as error:
+            logging.error(f"Error during follow-up: {error}")
+            raise
 
 
 class ProblemGenerator:
@@ -221,15 +230,9 @@ class ProblemGenerator:
                 messages=messages,
                 response_format={"type": "json_object"},
             )
-        except openai.OpenAIError as error:
-            logging.error(f"OpenAI error: {error}")
-            raise
-
-        content = completion.choices[0].message.content
-        try:
-            problem_dict = json.loads(content)
-        except json.JSONDecodeError as error:
-            logging.error(f"Error decoding JSON content: {error}")
+            problem_dict = json.loads(completion.choices[0].message.content)
+        except (openai.OpenAIError, json.JSONDecodeError) as error:
+            logging.error(f"Error generating problem: {error}")
             raise
 
         problem_dict["task_id"] = task_id
@@ -248,22 +251,29 @@ class ProblemGenerator:
                 "for the HumanEval Dataset. Requirements:\n"
                 f"1. JSON format with keys: {self.validator.problem_keys}.\n"
                 f"2. Example: {self.example_problem}\n"
-                "3. Prompt must start with 'def'.\n"
+                "3. Prompt must start with 'def' and include examples that will help understanding the problem.\n"
                 "4. Test cases must start with 'def' and include at least five complex cases.\n"
-                "5. Solution must pass test cases.\n"
+                "5. Solution must pass test cases and complete the prompt code without redefining the entry_point function from the prompt.\n"
                 "6. Combine multiple concepts uniquely and efficiently.\n"
                 "7. Include constraints or twists, and consider time/space complexity requirements.\n"
-                "8. Include a 'cleaned_prompt' field that matches the problem prompt but without all the cover story around it, "
-                "make sure that the core concept of the questions stays the same."
+                "8. The problem should require at least 30 lines to solve.\n"
+                "9. Include a 'cleaned_prompt' field that matches the problem prompt but without all the cover story around it, "
+                "make sure that the core concept of the questions stays the same and there are some examples and explanations that "
+                "makes it easy to understand."
             ),
         }
 
     def _get_user_message(
         self, cover_story_words: List[str], topics: List[str]
     ) -> ChatCompletionUserMessageParam:
+        cover_story_str = " and ".join(cover_story_words)
+        topics_str = " and ".join(topics)
         return {
             "role": "user",
-            "content": f"Create a problem with a cover story about {' and '.join(cover_story_words)} and involving the topics: {', '.join(topics)}. Ensure complexity and novelty.",
+            "content": (
+                f"Create a problem with a cover story about {cover_story_str} and involving the topics: {topics_str}. "
+                "Use concepts from machine learning and ensure complexity and novelty."
+            ),
         }
 
     def save_problem(
@@ -293,8 +303,9 @@ def load_config() -> Dict[str, Any]:
     }
 
 
-def handle_task(problem_generator: ProblemGenerator, attempt: int):
-    task_id = f"{problem_generator.task_id_class}/{attempt + 1}"
+def generate_and_validate(
+    problem_generator: ProblemGenerator, task_id: str
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     try:
         new_problem = problem_generator.generate_problem(task_id)
     except Exception as error:
@@ -303,19 +314,67 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int):
 
     validation_result = problem_generator.validator.validate_problem(new_problem)
     if validation_result["valid"]:
-        if warnings := validation_result.get("warnings"):
-            logging.info(
-                f"Problem generated for task_id {task_id} with warnings: {warnings}"
+        warnings = validation_result.get("warnings", [])
+        if warnings:
+            improved_problem = try_improving_problem(
+                problem_generator,
+                new_problem,
+                "Problem is valid but has warnings.",
+                warnings,
             )
-            new_problem["extra_info"]["warnings"] = warnings
+            return validate_final_problem(problem_generator, improved_problem, task_id)
         else:
-            logging.info(f"Problem generated for task_id {task_id}")
-        return new_problem, None
+            return new_problem, None
     else:
         reason = validation_result["reason"]
-        logging.warning(f"Invalid problem generated, reason: {reason}")
-        new_problem["invalid_reason"] = reason
-        return None, new_problem
+        warnings = validation_result.get("warnings", [])
+        improved_problem = try_improving_problem(
+            problem_generator, new_problem, reason, warnings
+        )
+        return validate_final_problem(problem_generator, improved_problem, task_id)
+
+
+def try_improving_problem(
+    problem_generator: ProblemGenerator,
+    problem: Dict[str, Any],
+    followup_reason: str,
+    warnings: List[str],
+) -> Dict[str, Any]:
+    try:
+        extra_info = problem.pop("extra_info")
+        problem["extra_info"] = extra_info
+        problem["extra_info"]["warnings"] = warnings
+        return problem_generator.validator.follow_up_prompt(
+            problem, followup_reason, warnings
+        )
+    except Exception as error:
+        logging.error(f"Error improving problem: {error}")
+        problem["invalid_reason"] = f"{followup_reason}; Warnings: {warnings}"
+        return problem
+
+
+def validate_final_problem(
+    problem_generator: ProblemGenerator, problem: Dict[str, Any], task_id: str
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    validation_result = problem_generator.validator.validate_problem(problem)
+    if validation_result["valid"]:
+        warnings = validation_result.get("warnings", [])
+        if warnings:
+            logging.info(
+                f"Improved problem for task_id {task_id} valid with warnings: {warnings}"
+            )
+            problem["extra_info"]["warnings"] = warnings
+        return problem, None
+    else:
+        problem["invalid_reason"] = validation_result["reason"]
+        return None, problem
+
+
+def handle_task(
+    problem_generator: ProblemGenerator, attempt: int
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    task_id = f"{problem_generator.task_id_class}/{attempt + 1}"
+    return generate_and_validate(problem_generator, task_id)
 
 
 def main() -> None:
@@ -325,7 +384,8 @@ def main() -> None:
     config = load_config()
     problem_generator = ProblemGenerator(config)
 
-    valid_problems, invalid_problems_counter = [], defaultdict(int)
+    valid_problems = []
+    invalid_problems_counter = defaultdict(int)
 
     with ThreadPoolExecutor() as executor:
         futures = [
@@ -335,17 +395,20 @@ def main() -> None:
         for future in tqdm(
             as_completed(futures), total=config["ATTEMPTS"], desc="Generating problems"
         ):
-            new_problem, invalid_problem = future.result()
-            if new_problem:
-                problem_generator.save_problem(new_problem, is_valid=True)
-                valid_problems.append(new_problem)
-            elif invalid_problem:
-                problem_generator.save_problem(
-                    invalid_problem,
-                    is_valid=False,
-                    reason=invalid_problem["invalid_reason"],
-                )
-                invalid_problems_counter[invalid_problem["invalid_reason"]] += 1
+            try:
+                new_problem, invalid_problem = future.result()
+                if new_problem:
+                    problem_generator.save_problem(new_problem, is_valid=True)
+                    valid_problems.append(new_problem)
+                elif invalid_problem:
+                    problem_generator.save_problem(
+                        invalid_problem,
+                        is_valid=False,
+                        reason=invalid_problem["invalid_reason"],
+                    )
+                    invalid_problems_counter[invalid_problem["invalid_reason"]] += 1
+            except Exception as error:
+                logging.error(f"Unhandled exception: {error}")
 
     logging.info(
         f"Problem generation completed. Created {len(valid_problems)} valid problems from {config['ATTEMPTS']} attempts"
