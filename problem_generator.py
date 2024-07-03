@@ -255,7 +255,8 @@ class ProblemGenerator:
                 "7. Include constraints or twists, and consider time/space complexity requirements.\n"
                 "8. The problem should require at least 30 lines to solve.\n"
                 "9. Include a 'cleaned_prompt' field that matches the problem prompt but without all the cover story around it, "
-                "make sure that the core concept of the questions stays the same."
+                "make sure that the core concept of the questions stays the same and there are some examples and explanition that " 
+                "makes it easy to understand."
             ),
         }
 
