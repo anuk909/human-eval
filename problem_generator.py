@@ -118,9 +118,8 @@ class ProblemValidator:
             "role": "system",
             "content": (
                 "You are an expert in analyzing and critiquing problem statements, especially for coding competitions."
-                " Please find and report any potential flaws in this problem. Focus on significant issues that make the problem"
-                " unusable. The output format should be 'severity, flaw_name: description' with each flaw on a new line, severity "
-                "is between 1 to 5 with 5 being the highest severity."
+                " Please find and report any potential flaws in this problem. Focus on significant issues that make the problem unusable (focus mainly on the problem and not on the canonical solution or tests). "
+                "The output format should be 'severity, flaw_name: description' with each flaw on a new line, severity is between 1 to 5 with 5 being the highest severity."
             ),
         }
         user_message = {"role": "user", "content": json.dumps(problem, indent=2)}
@@ -255,7 +254,7 @@ class ProblemGenerator:
                 "7. Include constraints or twists, and consider time/space complexity requirements.\n"
                 "8. The problem should require at least 30 lines to solve.\n"
                 "9. Include a 'cleaned_prompt' field that matches the problem prompt but without all the cover story around it, "
-                "make sure that the core concept of the questions stays the same and there are some examples and explanition that " 
+                "make sure that the core concept of the questions stays the same and there are some examples and explanations that "
                 "makes it easy to understand."
             ),
         }
@@ -267,7 +266,8 @@ class ProblemGenerator:
         topics_str = " and ".join(topics)
         return {
             "role": "user",
-            "content": f"Create a problem with a cover story about {cover_story_str} and involving the topics: {topics_str}. Ensure complexity and novelty.",
+            "content": f"Create a problem with a cover story about {cover_story_str} and involving some of the topics from: {topics_str} "
+            "(you can choose subset of the topics that makes sense together). Ensure complexity and novelty.",
         }
 
     def save_problem(
