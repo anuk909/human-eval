@@ -152,15 +152,12 @@ class ProblemValidator:
         problem: Dict[str, Any],
         followup_reason: str,
         warnings: List[str],
-        gpt_feedback: List[str],
     ) -> Dict[str, Any]:
         system_message = {
             "role": "system",
             "content": (
                 "You are an expert problem setter for advanced coding competitions. You previously created a problem that had the following issues: "
-                f"{followup_reason}. Here are some additional issues identified:\n"
-                f"1. Warnings: {warnings}\n"
-                f"2. GPT Feedback: {gpt_feedback}\n"
+                f"{followup_reason}. Here are some additional issues identified: {warnings}.\n"
                 "Please revise and improve the problem statement to fix these issues and return JSON with same keys as the original problem."
             ),
         }
@@ -344,15 +341,19 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int) -> Any:
             logging.info(
                 f"Problem generated for task_id {task_id} with warnings: {warnings}"
             )
-            new_problem["extra_info"]["warnings"] = warnings
+            extra_info = new_problem.pop("extra_info")
+            extra_info["warnings"] = warnings
 
             # Attempt to improve the problem due to warnings
             followup_reason = "Problem is valid but has the following warnings."
-            gpt_feedback = problem_generator.validator._check_gpt_feedback(new_problem)
             try:
                 improved_problem = problem_generator.validator.follow_up_prompt(
-                    new_problem, followup_reason, warnings, gpt_feedback
+                    new_problem, followup_reason, warnings
                 )
+                improved_problem["extra_info"]["cover_story_words"] = extra_info[
+                    "cover_story_words"
+                ]
+                improved_problem["extra_info"]["topics"] = extra_info["cleaned_prompt"]
                 improved_validation_result = (
                     problem_generator.validator.validate_problem(improved_problem)
                 )
@@ -362,6 +363,7 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int) -> Any:
                         logging.info(
                             f"Improved problem generated for task_id {task_id} with warnings: {improved_warnings}"
                         )
+                        improved_problem["extra_info"]["warnings"] = improved_warnings
                     return improved_problem, None
                 else:
                     improved_reason = improved_validation_result["reason"]
@@ -382,16 +384,15 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int) -> Any:
     else:
         reason = validation_result["reason"]
         warnings = validation_result.get("warnings", [])
-        gpt_feedback = problem_generator.validator._check_gpt_feedback(new_problem)
         logging.warning(
-            f"Problem invalid for task_id {task_id}, reason: {reason}, warnings: {warnings}, GPT feedback: {gpt_feedback}"
+            f"Problem invalid for task_id {task_id}, reason: {reason}, warnings: {warnings}"
         )
 
         followup_reason = f"{reason}; Ensure all given topics are used and the problem statement is understandable."
 
         try:
             improved_problem = problem_generator.validator.follow_up_prompt(
-                new_problem, followup_reason, warnings, gpt_feedback
+                new_problem, followup_reason, warnings
             )
             improved_validation_result = problem_generator.validator.validate_problem(
                 improved_problem
