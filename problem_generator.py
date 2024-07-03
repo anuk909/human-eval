@@ -33,6 +33,7 @@ class FileHandler:
 
     @staticmethod
     def save_jsonl(path: str, data: Dict[str, Any]) -> None:
+        # Add lock
         try:
             with open(path, "a") as file:
                 json.dump(data, file)
@@ -350,10 +351,11 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int) -> Any:
                 improved_problem = problem_generator.validator.follow_up_prompt(
                     new_problem, followup_reason, warnings
                 )
-                improved_problem["extra_info"]["cover_story_words"] = extra_info[
-                    "cover_story_words"
-                ]
-                improved_problem["extra_info"]["topics"] = extra_info["cleaned_prompt"]
+                improved_problem["extra_info"] = {
+                    "cover_story_words": extra_info["cover_story_words"],
+                    "topics": extra_info["topics"],
+                    "cleaned_prompt": extra_info["cleaned_prompt"],
+                }
                 improved_validation_result = (
                     problem_generator.validator.validate_problem(improved_problem)
                 )
