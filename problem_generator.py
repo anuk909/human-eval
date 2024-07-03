@@ -5,7 +5,7 @@ import random
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Tuple, NoReturn
 
 import openai
 from openai.types.chat import (
@@ -26,9 +26,10 @@ class FileHandler:
         try:
             return json.loads(FileHandler._read_file(path))
         except json.JSONDecodeError as error:
-            error_message = f"Error loading JSON file: {path}. JSONDecodeError: {error}"
-            logging.error(error_message)
-            raise ValueError(error_message)
+            logging.error(f"Error loading JSON file: {path}. JSONDecodeError: {error}")
+            raise ValueError(
+                f"Error loading JSON file: {path}. JSONDecodeError: {error}"
+            )
 
     @staticmethod
     def save_jsonl(path: str, data: Dict[str, Any]) -> None:
@@ -91,7 +92,6 @@ class ProblemValidator:
             validation_result["warnings"].append(
                 f"Only {test_case_count} test cases found. Minimum recommended is 5."
             )
-
         if len(prompt) < 50:
             validation_result["warnings"].append("Prompt seems too short.")
         if len(problem["canonical_solution"]) < 10:
@@ -143,7 +143,6 @@ class ProblemValidator:
                         logging.warning(
                             f"Unable to parse feedback line: '{line}', Error: {parse_error}"
                         )
-
             return feedbacks
         except openai.OpenAIError as error:
             return [f"Error getting GPT feedback: {error}"]
@@ -174,10 +173,9 @@ class ProblemValidator:
                 response_format={"type": "json_object"},
             )
             content = completion.choices[0].message.content
-            revised_problem = json.loads(content)
-            return revised_problem
-        except openai.OpenAIError as error:
-            logging.error(f"OpenAI error during follow-up: {error}")
+            return json.loads(content)
+        except (json.JSONDecodeError, openai.OpenAIError) as error:
+            logging.error(f"Error during follow-up: {error}")
             raise
 
 
@@ -297,8 +295,10 @@ class ProblemGenerator:
         topics_str = " and ".join(topics)
         return {
             "role": "user",
-            "content": f"Create a problem with a cover story about {cover_story_str} and involving the topics: {topics_str}. "
-            "Use concepts from computer vision and Ensure complexity and novelty.",
+            "content": (
+                f"Create a problem with a cover story about {cover_story_str} and involving the topics: {topics_str}. "
+                "Use concepts from computer vision and ensure complexity and novelty."
+            ),
         }
 
     def save_problem(
@@ -328,7 +328,7 @@ def load_config() -> Dict[str, Any]:
     }
 
 
-def handle_task(problem_generator: ProblemGenerator, attempt: int):
+def handle_task(problem_generator: ProblemGenerator, attempt: int) -> Any:
     task_id = f"{problem_generator.task_id_class}/{attempt + 1}"
     try:
         new_problem = problem_generator.generate_problem(task_id)
@@ -355,14 +355,12 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int):
             f"Problem invalid for task_id {task_id}, reason: {reason}, warnings: {warnings}, GPT feedback: {gpt_feedback}"
         )
 
-        # Apply follow-up for fixable issues
         followup_reason = f"{reason}; Ensure all given topics are used and the problem statement is understandable."
 
         try:
             improved_problem = problem_generator.validator.follow_up_prompt(
                 new_problem, followup_reason, warnings, gpt_feedback
             )
-            # Re-validate the improved problem
             improved_validation_result = problem_generator.validator.validate_problem(
                 improved_problem
             )
@@ -372,9 +370,6 @@ def handle_task(problem_generator: ProblemGenerator, attempt: int):
                     logging.info(
                         f"Improved problem generated for task_id {task_id} with warnings: {warnings}"
                     )
-                    improved_problem["extra_info"]["warnings"] = warnings
-                else:
-                    logging.info(f"Improved problem generated for task_id {task_id}")
                 return improved_problem, None
             else:
                 improved_reason = improved_validation_result["reason"]
@@ -398,7 +393,8 @@ def main() -> None:
     config = load_config()
     problem_generator = ProblemGenerator(config)
 
-    valid_problems, invalid_problems_counter = [], defaultdict(int)
+    valid_problems = []
+    invalid_problems_counter = defaultdict(int)
 
     with ThreadPoolExecutor() as executor:
         futures = [
