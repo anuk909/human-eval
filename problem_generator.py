@@ -272,7 +272,7 @@ class ProblemGenerator:
             "role": "user",
             "content": (
                 f"Create a problem with a cover story about {cover_story_str} and involving the topics: {topics_str}. "
-                "Use concepts from computer vision and ensure complexity and novelty."
+                "Use concepts from machine learning and ensure complexity and novelty."
             ),
         }
 
@@ -303,10 +303,9 @@ def load_config() -> Dict[str, Any]:
     }
 
 
-def handle_task(
-    problem_generator: ProblemGenerator, attempt: int
-) -> Any:
-    task_id = f"{problem_generator.task_id_class}/{attempt + 1}"
+def generate_and_validate(
+    problem_generator: ProblemGenerator, task_id: str
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     try:
         new_problem = problem_generator.generate_problem(task_id)
     except Exception as error:
@@ -314,83 +313,68 @@ def handle_task(
         return None, None
 
     validation_result = problem_generator.validator.validate_problem(new_problem)
-
     if validation_result["valid"]:
         warnings = validation_result.get("warnings", [])
         if warnings:
-            logging.info(
-                f"Problem generated for task_id {task_id} with warnings: {warnings}"
+            improved_problem = try_improving_problem(
+                problem_generator,
+                new_problem,
+                "Problem is valid but has warnings.",
+                warnings,
             )
-            extra_info = new_problem.pop("extra_info")
-            extra_info["warnings"] = warnings
-
-            try:
-                improved_problem = problem_generator.validator.follow_up_prompt(
-                    new_problem, "Problem is valid but has warnings.", warnings
-                )
-                improved_problem["extra_info"] = extra_info
-                improved_validation_result = (
-                    problem_generator.validator.validate_problem(improved_problem)
-                )
-
-                if improved_validation_result["valid"]:
-                    improved_warnings = improved_validation_result.get("warnings", [])
-                    if improved_warnings:
-                        logging.info(
-                            f"Improved problem generated for task_id {task_id} with warnings: {improved_warnings}"
-                        )
-                        improved_problem["extra_info"]["warnings"] = improved_warnings
-                    return improved_problem, None
-                else:
-                    improved_problem["invalid_reason"] = improved_validation_result[
-                        "reason"
-                    ]
-                    return None, improved_problem
-            except Exception as error:
-                logging.error(
-                    f"Error during follow-up prompt for task_id {task_id}: {error}"
-                )
-                new_problem["invalid_reason"] = f"Valid with warnings: {warnings}"
-                return new_problem, None
+            return validate_final_problem(problem_generator, improved_problem, task_id)
         else:
-            logging.info(f"Problem generated for task_id {task_id}")
             return new_problem, None
     else:
         reason = validation_result["reason"]
         warnings = validation_result.get("warnings", [])
-        logging.warning(
-            f"Problem invalid for task_id {task_id}, reason: {reason}, warnings: {warnings}"
+        improved_problem = try_improving_problem(
+            problem_generator, new_problem, reason, warnings
         )
+        return validate_final_problem(problem_generator, improved_problem, task_id)
 
-        try:
-            improved_problem = problem_generator.validator.follow_up_prompt(
-                new_problem,
-                f"{reason}; Ensure all given topics are used and the problem statement is understandable.",
-                warnings,
-            )
-            improved_validation_result = problem_generator.validator.validate_problem(
-                improved_problem
-            )
 
-            if improved_validation_result["valid"]:
-                warnings = improved_validation_result.get("warnings", [])
-                if warnings:
-                    logging.info(
-                        f"Improved problem generated for task_id {task_id} with warnings: {warnings}"
-                    )
-                    improved_problem["extra_info"]["warnings"] = warnings
-                return improved_problem, None
-            else:
-                improved_problem["invalid_reason"] = improved_validation_result[
-                    "reason"
-                ]
-                return None, improved_problem
-        except Exception as error:
-            logging.error(
-                f"Error during follow-up prompt for task_id {task_id}: {error}"
+def try_improving_problem(
+    problem_generator: ProblemGenerator,
+    problem: Dict[str, Any],
+    followup_reason: str,
+    warnings: List[str],
+) -> Dict[str, Any]:
+    try:
+        extra_info = problem.pop("extra_info")
+        problem["extra_info"] = extra_info
+        problem["extra_info"]["warnings"] = warnings
+        return problem_generator.validator.follow_up_prompt(
+            problem, followup_reason, warnings
+        )
+    except Exception as error:
+        logging.error(f"Error improving problem: {error}")
+        problem["invalid_reason"] = f"{followup_reason}; Warnings: {warnings}"
+        return problem
+
+
+def validate_final_problem(
+    problem_generator: ProblemGenerator, problem: Dict[str, Any], task_id: str
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    validation_result = problem_generator.validator.validate_problem(problem)
+    if validation_result["valid"]:
+        warnings = validation_result.get("warnings", [])
+        if warnings:
+            logging.info(
+                f"Improved problem for task_id {task_id} valid with warnings: {warnings}"
             )
-            new_problem["invalid_reason"] = reason
-            return None, new_problem
+            problem["extra_info"]["warnings"] = warnings
+        return problem, None
+    else:
+        problem["invalid_reason"] = validation_result["reason"]
+        return None, problem
+
+
+def handle_task(
+    problem_generator: ProblemGenerator, attempt: int
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    task_id = f"{problem_generator.task_id_class}/{attempt + 1}"
+    return generate_and_validate(problem_generator, task_id)
 
 
 def main() -> None:
@@ -411,17 +395,20 @@ def main() -> None:
         for future in tqdm(
             as_completed(futures), total=config["ATTEMPTS"], desc="Generating problems"
         ):
-            new_problem, invalid_problem = future.result()
-            if new_problem:
-                problem_generator.save_problem(new_problem, is_valid=True)
-                valid_problems.append(new_problem)
-            elif invalid_problem:
-                problem_generator.save_problem(
-                    invalid_problem,
-                    is_valid=False,
-                    reason=invalid_problem["invalid_reason"],
-                )
-                invalid_problems_counter[invalid_problem["invalid_reason"]] += 1
+            try:
+                new_problem, invalid_problem = future.result()
+                if new_problem:
+                    problem_generator.save_problem(new_problem, is_valid=True)
+                    valid_problems.append(new_problem)
+                elif invalid_problem:
+                    problem_generator.save_problem(
+                        invalid_problem,
+                        is_valid=False,
+                        reason=invalid_problem["invalid_reason"],
+                    )
+                    invalid_problems_counter[invalid_problem["invalid_reason"]] += 1
+            except Exception as error:
+                logging.error(f"Unhandled exception: {error}")
 
     logging.info(
         f"Problem generation completed. Created {len(valid_problems)} valid problems from {config['ATTEMPTS']} attempts"
